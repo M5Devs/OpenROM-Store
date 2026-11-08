@@ -3,6 +3,8 @@ __pycache__/
 # Plugin binaries are never committed to this metadata-only repository.
 # Packaged extensions are hosted on SourceForge.
 *.orplug
+# Packaged skins (.orskin) are published to SourceForge, never committed here.
+*.orskin
 # SourceForge upload probe artifacts
 sf_probe_healthcheck.txt
 temp_healthcheck.txt
@@ -21,3 +23,4 @@ dist/
 
 # Local .orskin authoring staging (packages are published to SourceForge, not committed)
 stage_skin/
+stage_skin_v2/

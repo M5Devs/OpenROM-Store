@@ -62,10 +62,12 @@ with a direct call to action to the [submission guide](./CONTRIBUTING.md).
 | `migrations/0002_auth_and_publishers.sql` | D1 schema for users + publishers |
 | `migrations/0003_publisher_profiles.sql` | Publisher profile fields + `plugins.publisher_id` |
 | `migrations/0004_user_profiles.sql` | `users.profile_customized` flag |
+| `migrations/0009_tsundere_v2.sql` | Upgrade the `anime-tsundere` theme listing to the `.orskin` v2 spec (2.0.0) |
 | `seed/0001_seed.sql` | Seed with the repository's real, verified extensions |
+| `scripts/package_orskin.py` | Deterministic `.orskin` theme packager (sorted entries, fixed ZIP epoch) |
 | `scripts/test_sourceforge_storage.sh` | SourceForge connectivity + upload probe |
 | `scripts/test-sourceforge.sh` | Alias for the probe above |
-| `tests/auth.test.ts` / `tests/publisher-profile.test.ts` / `tests/publisher-profile-page.test.ts` / `tests/user-profile.test.ts` | Unit tests (`npm test`) |
+| `tests/auth.test.ts` / `tests/publisher-profile.test.ts` / `tests/publisher-profile-page.test.ts` / `tests/user-profile.test.ts` / `tests/package_orskin.test.ts` | Unit tests (`npm test`) |
 | `wrangler.toml` | Cloudflare Pages + D1 binding configuration |
 
 > Extension metadata lives entirely in D1. There is no static manifest or
@@ -271,3 +273,33 @@ created in D1 through the site, and binaries are uploaded to SourceForge.
 
 Verify storage connectivity at any time with
 `bash scripts/test_sourceforge_storage.sh`.
+
+## Publishing a theme (.orskin)
+
+Themes are ordinary catalog rows with `category = 'Themes'`; they differ only in
+what the bundle contains. A **`.orskin` v2** theme is a ZIP at the archive root
+with `skin.json` (plus `wallpaper.png`, `preview.png`, and optional deluxe assets:
+`font.ttf` + `font-LICENSE.txt`, `icons/*.png`, `dropzone.png`).
+
+1. **Stage** the theme files in a directory (for example `stage_skin_v2/`).
+2. **Package** deterministically — the same staged files always yield the same
+   SHA-256, so the checksum in D1 is independently reproducible:
+
+   ```bash
+   python3 scripts/package_orskin.py stage_skin_v2 anime-tsundere-2.0.0.orskin
+   ```
+
+3. **Upload** it under the versioned path the listing points at:
+
+   ```bash
+   rsync -av -e ssh ./anime-tsundere-2.0.0.orskin \
+     "$SF_USER@frs.sourceforge.net:/home/frs/project/openrom-skins/m5dev/anime-tsundere/2.0.0/"
+   ```
+
+   served from
+   `https://downloads.sourceforge.net/project/openrom-skins/m5dev/anime-tsundere/2.0.0/anime-tsundere-2.0.0.orskin`.
+   Keep every version in its own directory so older installs keep resolving.
+4. **Record** the version, `download_url`, and `sha256` on the theme's D1 row
+   (see `migrations/0009_tsundere_v2.sql`). The upsert updates every column
+   *except* `downloads`, so re-applying never resets the live counter.
+
