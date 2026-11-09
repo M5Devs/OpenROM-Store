@@ -5,6 +5,9 @@ __pycache__/
 *.orplug
 # Packaged skins (.orskin) are published to SourceForge, never committed here.
 *.orskin
+# Theme preview screenshots are hosted on SourceForge next to the bundle, never
+# committed here (image binaries would bloat the metadata-only repo).
+public/images/previews/
 # SourceForge upload probe artifacts
 sf_probe_healthcheck.txt
 temp_healthcheck.txt

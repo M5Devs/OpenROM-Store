@@ -12,6 +12,12 @@
 --
 --   v2.0.0 bundle: https://downloads.sourceforge.net/project/openrom-skins/m5dev/anime-tsundere/2.0.0/anime-tsundere-2.0.0.orskin
 --
+-- The gallery screenshot is hosted next to the bundle on SourceForge rather than
+-- committed to this repository, so the storefront carries no image binaries:
+--   v2.0.0 preview: .../anime-tsundere/2.0.0/preview.png
+-- (the same PNG that ships inside the `.orskin`). `public/images/previews/` is
+-- gitignored — add a preview to FRS, not to git.
+--
 -- The `sha256` below is the digest of that exact archive. It is reproducible:
 -- `scripts/package_orskin.py` writes a deterministic ZIP (sorted entries, fixed
 -- 1980 ZIP epoch timestamp, fixed 0644 member mode), so rebuilding from the same
@@ -98,7 +104,7 @@ and import it from *Settings → Appearance → Import…*. Requires OpenROM Cor
     'https://downloads.sourceforge.net/project/openrom-skins/m5dev/anime-tsundere/2.0.0/anime-tsundere-2.0.0.orskin',
     '45f4830ae52da3890d6e2fa01ef1a213619dab72b8795b4d7954667f8744cac4',
     'palette',
-    '["/images/previews/anime-tsundere.png"]',
+    '["https://downloads.sourceforge.net/project/openrom-skins/m5dev/anime-tsundere/2.0.0/preview.png"]',
     0
   )
 ON CONFLICT (id) DO UPDATE SET

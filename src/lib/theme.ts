@@ -138,22 +138,3 @@ export function themeScreenshots(screenshots: string[] | null | undefined): stri
 export function hasScreenshots(screenshots: string[] | null | undefined): boolean {
   return themeScreenshots(screenshots).length > 0;
 }
-
-/**
- * The images to show for a theme listing, in order of preference: the listing's
- * own screenshots, then a preview bundled with the site at
- * `/images/previews/<id>.png`, and otherwise nothing — the caller then falls
- * back to the CSS mock box.
- *
- * `hasBundledPreview` is resolved by the page at build time via a glob, because
- * a Cloudflare Worker has no filesystem to probe for the file at request time.
- */
-export function themeGallery(
-  id: string,
-  screenshots: string[] | null | undefined,
-  hasBundledPreview: boolean,
-): string[] {
-  const validated = themeScreenshots(screenshots);
-  if (validated.length > 0) return validated;
-  return hasBundledPreview ? [`/images/previews/${id}.png`] : [];
-}

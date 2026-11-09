@@ -10,7 +10,6 @@ import {
   themeSwatches,
   themeScreenshots,
   hasScreenshots,
-  themeGallery,
   sanitizeScreenshotUrl,
   contrastText,
   themeApplyUri,
@@ -158,24 +157,13 @@ test('hasScreenshots is true only when at least one URL survives validation', ()
   assert.equal(hasScreenshots(null), false);
 });
 
-test('themeGallery prefers the listing screenshots over a bundled preview', () => {
-  assert.deepEqual(themeGallery('cyberpunk-neon', ['/images/romeo-banner.png'], true), [
-    '/images/romeo-banner.png',
-  ]);
-});
-
-test('themeGallery falls back to the bundled preview when screenshots are empty', () => {
-  assert.deepEqual(themeGallery('anime-tsundere', [], true), ['/images/previews/anime-tsundere.png']);
-  assert.deepEqual(themeGallery('anime-tsundere', null, true), ['/images/previews/anime-tsundere.png']);
-});
-
-test('themeGallery ignores invalid screenshots and still uses the bundled preview', () => {
-  assert.deepEqual(themeGallery('anime-tsundere', ['javascript:alert(1)'], true), [
+test('the gallery shows the remote SourceForge URL from D1 and never a bundled path', () => {
+  const remote = 'https://downloads.sourceforge.net/project/openrom-skins/m5dev/anime-tsundere/2.0.0/preview.png';
+  // The URL stored on the listing row is exactly what the gallery renders.
+  assert.deepEqual(themeScreenshots([remote]), [remote]);
+  // A bare id is not a screenshot, so nothing is synthesized from a bundled file.
+  assert.deepEqual(themeScreenshots(['anime-tsundere']), []);
+  assert.deepEqual(themeScreenshots(['/images/previews/anime-tsundere.png']), [
     '/images/previews/anime-tsundere.png',
   ]);
-});
-
-test('themeGallery is empty with no screenshots and no bundled preview (mock box)', () => {
-  assert.deepEqual(themeGallery('unknown-theme', [], false), []);
-  assert.deepEqual(themeGallery('unknown-theme', null, false), []);
 });

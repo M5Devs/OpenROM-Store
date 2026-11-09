@@ -7,7 +7,7 @@ import {
   isTheme,
   themePalette,
   themeSwatches,
-  themeGallery,
+  themeScreenshots,
   contrastText,
   themeApplyUri,
   orskinFileName,
@@ -91,21 +91,11 @@ const theme = Boolean(plugin && isTheme(plugin.category));
 const palette = theme ? themePalette(plugin!.routes) : [];
 const swatches = theme ? themeSwatches(plugin!.routes) : [];
 
-// Bundled preview images live under public/images/previews/<id>.png and are
-// resolved at build time: a Cloudflare Worker has no filesystem to probe at
-// request time, so a glob is the only way to know which ids ship a preview.
-const previewModules = import.meta.glob('../../../public/images/previews/*.png', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-});
-const previewIds = new Set(
-  Object.keys(previewModules).map((path) => path.split('/').pop()!.replace(/\.png$/, '')),
-);
-
-// Prefer the row's own screenshots, then a bundled preview, and only then fall
-// back to the CSS mock box.
-const gallery = plugin ? themeGallery(plugin.id, plugin.screenshots, previewIds.has(plugin.id)) : [];
+// Screenshots are remote URLs stored on the listing row (`screenshots_json`,
+// served from SourceForge alongside the bundle). Nothing is bundled with the
+// site, so there is no build-time glob to probe and no binary in the repo; a
+// theme without a screenshot simply falls back to the CSS mock box.
+const gallery = plugin ? themeScreenshots(plugin.screenshots) : [];
 const showGallery = theme && gallery.length > 0;
 const showMockup = theme && gallery.length === 0;
 const applyUri = plugin ? themeApplyUri(plugin.id) : '';
