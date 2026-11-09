@@ -1,7 +1,7 @@
 ---
 import Layout from '../../layouts/Layout.astro';
 import Icon from '../../components/Icon.astro';
-import { getDB, getPlugin } from '../../lib/db';
+import { getDB, getPlugin, listPluginVersions, type PluginVersion } from '../../lib/db';
 import { PLATFORM_ICONS, SITE, categoryLabel } from '../../lib/site';
 import {
   isTheme,
@@ -14,6 +14,7 @@ import {
 } from '../../lib/theme';
 import { renderMarkdown } from '../../lib/markdown';
 import { compatibilityFor, detectOS, supportedLabel } from '../../lib/detectOS';
+import { formatReleaseDate, isNewerVersion } from '../../lib/version';
 
 export const prerender = false;
 
@@ -37,8 +38,54 @@ if (dbError) {
   Astro.response.status = 404;
 }
 
+// The release ledger. A pre-0010 database has no `plugin_versions` table, which
+// is a *degraded* read rather than a fatal one: fall back to synthesizing a
+// single release from the plugin row so the page still renders its current
+// version. `?v=` is honoured here so a deep link can preselect a release.
+let versions: PluginVersion[] = [];
+if (plugin) {
+  try {
+    versions = await listPluginVersions(getDB(Astro.locals), plugin.id);
+  } catch (error) {
+    console.error(`Failed to load version history for "${id}"`, error);
+  }
+  if (versions.length === 0) {
+    versions = [
+      {
+        id: 0,
+        pluginId: plugin.id,
+        version: plugin.version,
+        minCoreVersion: plugin.minCoreVersion,
+        downloadUrl: plugin.downloadUrl,
+        sha256: plugin.sha256,
+        createdAt: plugin.createdAt,
+      },
+    ];
+  }
+}
+
+// The latest release is whatever the ledger ranks highest — never assumed to be
+// the first row, so a hand-seeded out-of-order list still tags the right entry.
+const latestVersion = versions.reduce(
+  (newest, entry) => (isNewerVersion(entry.version, newest) ? entry.version : newest),
+  versions[0]?.version ?? '',
+);
+
+const requestedVersion = Astro.url.searchParams.get('v')?.trim() ?? '';
+const selectedVersion =
+  versions.find((entry) => entry.version === requestedVersion) ??
+  versions.find((entry) => entry.version === latestVersion) ??
+  versions[0];
+
 const cli = plugin ? `openrom-core --install-plugin ${plugin.id}` : '';
 const published = Boolean(plugin?.sha256);
+
+// The primary download follows the version selector, so choosing v1.0.0 in the
+// hero and clicking "Download" fetches exactly what the hero says it will. The
+// version-history table's own "newest build" link stays unversioned (latest).
+const downloadHref = plugin
+  ? `/api/download/${plugin.id}?v=${encodeURIComponent(selectedVersion?.version ?? plugin.version)}`
+  : '';
 
 const theme = Boolean(plugin && isTheme(plugin.category));
 const palette = theme ? themePalette(plugin!.routes) : [];
@@ -175,13 +222,69 @@ const body = dbError
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <h1 class="text-2xl font-bold tracking-tight text-white">{plugin.name}</h1>
-                <span class="rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 font-mono text-xs text-zinc-400">
-                  v{plugin.version}
+                <span
+                  class="rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 font-mono text-xs text-zinc-400"
+                  data-selected-version
+                >
+                  v{selectedVersion?.version ?? plugin.version}
+                </span>
+                <span
+                  data-latest-chip
+                  class:list={[
+                    'inline-flex items-center gap-1 rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-xs font-medium text-cyan-300',
+                    selectedVersion?.version !== latestVersion && 'hidden',
+                  ]}
+                >
+                  <Icon name="sparkles" class="h-3 w-3" />
+                  Latest
                 </span>
                 <span class="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-xs font-medium text-cyan-300">
                   {categoryLabel(plugin.category)}
                 </span>
               </div>
+
+              {/* Version selector — only rendered when there is more than one
+                  published release. It navigates (rather than toggling client
+                  state) so a specific version is shareable and server-rendered. */}
+              {versions.length > 1 && (
+                <form method="get" class="mt-3" data-version-selector>
+                  <label
+                    for="version-select"
+                    class="block text-xs font-medium text-zinc-500"
+                  >
+                    View a specific release
+                  </label>
+                  <div class="relative mt-1.5 inline-flex items-center">
+                    <select
+                      id="version-select"
+                      name="v"
+                      class="h-9 appearance-none rounded-lg border border-zinc-800 bg-zinc-950/60 pl-3 pr-9 font-mono text-xs text-zinc-200 transition hover:border-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                    >
+                      {versions.map((entry) => (
+                        <option value={entry.version} selected={entry.version === selectedVersion?.version}>
+                          v{entry.version}
+                          {entry.version === latestVersion ? ' (Latest)' : ''}
+                          {entry.version === plugin.version && entry.version !== latestVersion
+                            ? ' (current)'
+                            : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <Icon
+                      name="chevron-right"
+                      class="pointer-events-none absolute right-3 h-4 w-4 rotate-90 text-zinc-500"
+                    />
+                  </div>
+                  <noscript>
+                    <button
+                      type="submit"
+                      class="ml-2 h-9 rounded-lg border border-zinc-800 px-3 text-xs font-medium text-zinc-200"
+                    >
+                      View
+                    </button>
+                  </noscript>
+                </form>
+              )}
 
               <p class="mt-2 flex flex-wrap items-center gap-x-2 text-sm text-zinc-400">
                 <span class="text-zinc-500">by</span>
@@ -299,11 +402,11 @@ const body = dbError
 
             {published && (
               <a
-                href={`/api/download/${plugin.id}`}
+                href={downloadHref}
                 class="inline-flex h-11 items-center gap-2 rounded-lg border border-zinc-800 px-5 text-sm font-medium text-zinc-200 transition hover:border-zinc-700 hover:text-white"
               >
                 <Icon name="download" class="h-4 w-4" />
-                Download {theme ? '.orskin' : '.orplug'}
+                Download {theme ? '.orskin' : '.orplug'} v{selectedVersion?.version ?? plugin.version}
               </a>
             )}
 
@@ -381,6 +484,109 @@ const body = dbError
             <section class="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6">
               <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-400">Overview</h2>
               <div class="prose mt-4" set:html={readmeHtml} />
+            </section>
+
+            {/* Version history — the append-only release ledger. Every published
+                artifact is listed with its own digest and download button so an
+                older release stays reachable after the listing moves forward. */}
+            <section
+              id="version-history"
+              class="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6"
+            >
+              <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-zinc-400">
+                  Version History
+                </h2>
+                <span class="text-xs text-zinc-500">
+                  {versions.length} {versions.length === 1 ? 'release' : 'releases'}
+                </span>
+              </div>
+              <p class="mt-1.5 text-sm text-zinc-400">
+                Every published release, newest first. Download a specific version, or verify the
+                file you already have against its SHA-256.
+              </p>
+
+              <div class="mt-4 overflow-x-auto">
+                <table class="w-full min-w-[36rem] border-collapse text-left text-sm">
+                  <thead>
+                    <tr class="border-b border-zinc-800 text-xs uppercase tracking-wide text-zinc-500">
+                      <th scope="col" class="py-2 pr-4 font-medium">Version</th>
+                      <th scope="col" class="py-2 pr-4 font-medium">Released</th>
+                      <th scope="col" class="py-2 pr-4 font-medium">Min core</th>
+                      <th scope="col" class="py-2 pr-4 font-medium">SHA-256</th>
+                      <th scope="col" class="py-2 font-medium">
+                        <span class="sr-only">Download</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {versions.map((entry) => (
+                      <tr
+                        class:list={[
+                          'border-b border-zinc-800/60 last:border-0',
+                          entry.version === selectedVersion?.version && 'bg-zinc-950/40',
+                        ]}
+                      >
+                        <td class="py-3 pr-4 align-top">
+                          <div class="flex items-center gap-2">
+                            <span class="font-mono text-zinc-200">v{entry.version}</span>
+                            {entry.version === latestVersion && (
+                              <span class="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[0.65rem] font-medium text-cyan-300">
+                                Latest
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td class="py-3 pr-4 align-top text-zinc-400">
+                          {formatReleaseDate(entry.createdAt) || '—'}
+                        </td>
+                        <td class="py-3 pr-4 align-top font-mono text-xs text-zinc-400">
+                          {entry.minCoreVersion}
+                        </td>
+                        <td class="py-3 pr-4 align-top">
+                          {entry.sha256 ? (
+                            <div class="flex items-start gap-2">
+                              <code class="min-w-0 max-w-[16rem] break-all font-mono text-[0.7rem] leading-relaxed text-zinc-400">
+                                {entry.sha256}
+                              </code>
+                              <button
+                                type="button"
+                                data-copy={entry.sha256}
+                                aria-label={`Copy SHA-256 for version ${entry.version}`}
+                                class="grid h-6 w-6 shrink-0 place-items-center rounded-md border border-zinc-800 text-zinc-500 transition hover:text-cyan-300"
+                              >
+                                <Icon name="copy" class="h-3 w-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span class="text-zinc-600">—</span>
+                          )}
+                        </td>
+                        <td class="py-3 align-top text-right">
+                          <a
+                            href={`/api/download/${plugin.id}?v=${encodeURIComponent(entry.version)}`}
+                            class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 text-xs font-medium text-zinc-200 transition hover:border-zinc-700 hover:text-white"
+                          >
+                            <Icon name="download" class="h-3.5 w-3.5" />
+                            Download
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <p class="mt-3 text-xs text-zinc-500">
+                Looking for the newest build? It is always{' '}
+                <a
+                  href={`/api/download/${plugin.id}`}
+                  class="text-cyan-400 hover:underline"
+                >
+                  the default download
+                </a>
+                .
+              </p>
             </section>
 
             {
@@ -780,6 +986,13 @@ const body = dbError
   document.querySelectorAll<HTMLElement>('[data-compat]').forEach(initCompatibility);
   document.querySelectorAll<HTMLElement>('[data-gallery]').forEach(initGallery);
   document.querySelector('[data-retry]')?.addEventListener('click', () => location.reload());
+
+  // The version selector navigates so a chosen release is shareable and matches
+  // what the server rendered. Submitting on change keeps it a one-click control;
+  // the form is simply absent on single-release listings.
+  document.querySelector<HTMLSelectElement>('#version-select')?.addEventListener('change', (event) => {
+    (event.currentTarget as HTMLSelectElement).form?.submit();
+  });
 
   document.addEventListener('click', async (event) => {
     const trigger = (event.target as HTMLElement).closest<HTMLElement>('[data-copy]');

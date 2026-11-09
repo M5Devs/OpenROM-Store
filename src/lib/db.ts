@@ -6,6 +6,8 @@
  * bundled fallback catalog.
  */
 
+import { compareVersions } from './version.ts';
+
 /** Raw row as stored in D1. */
 export interface PluginRow {
   id: string;
@@ -196,6 +198,85 @@ export async function incrementDownloads(db: D1Database, id: string): Promise<st
   const row = await db
     .prepare('UPDATE plugins SET downloads = downloads + 1 WHERE id = ? RETURNING download_url')
     .bind(id)
+    .first<{ download_url: string }>();
+  return row?.download_url ?? null;
+}
+
+/** Raw row as stored in `plugin_versions`. */
+export interface PluginVersionRow {
+  id: number;
+  plugin_id: string;
+  version: string;
+  min_core_version: string | null;
+  download_url: string;
+  sha256: string;
+  created_at: string;
+}
+
+/** Normalized release record handed to the version-history UI. */
+export interface PluginVersion {
+  id: number;
+  pluginId: string;
+  version: string;
+  minCoreVersion: string;
+  downloadUrl: string;
+  sha256: string;
+  createdAt: string;
+}
+
+export function toPluginVersion(row: PluginVersionRow): PluginVersion {
+  return {
+    id: row.id,
+    pluginId: row.plugin_id,
+    version: row.version,
+    minCoreVersion: row.min_core_version ?? '3.9.0',
+    downloadUrl: row.download_url,
+    sha256: row.sha256,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Every published release for a plugin, newest first.
+ *
+ * The ordering is done in JS with `compareVersions` rather than SQL because
+ * `version` is free-form text: SQLite's `ORDER BY` would rank `1.9.0` above
+ * `1.10.0`. The table is small (one row per release), so sorting in memory is
+ * cheap and gives the version selector a trustworthy order.
+ *
+ * A missing `plugin_versions` table (pre-0010 database) is not fatal — callers
+ * treat an empty list as "fall back to the row's current release".
+ */
+export async function listPluginVersions(
+  db: D1Database,
+  pluginId: string,
+): Promise<PluginVersion[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, plugin_id, version, min_core_version, download_url, sha256, created_at
+         FROM plugin_versions
+        WHERE plugin_id = ?`,
+    )
+    .bind(pluginId)
+    .all<PluginVersionRow>();
+  return (results ?? [])
+    .map(toPluginVersion)
+    .sort((a, b) => compareVersions(b.version, a.version));
+}
+
+/**
+ * Resolve the download URL for one specific release. Returns `null` when the
+ * version was never published, which the download route turns into a 404 rather
+ * than silently serving the latest bundle.
+ */
+export async function getVersionDownloadUrl(
+  db: D1Database,
+  pluginId: string,
+  version: string,
+): Promise<string | null> {
+  const row = await db
+    .prepare('SELECT download_url FROM plugin_versions WHERE plugin_id = ? AND version = ?')
+    .bind(pluginId, version)
     .first<{ download_url: string }>();
   return row?.download_url ?? null;
 }
