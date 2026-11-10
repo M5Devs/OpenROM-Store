@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { getDB, getVersionDownloadUrl, incrementDownloads } from '../../../lib/db';
+import { trackDownload } from '../../../lib/analytics';
 
 export const prerender = false;
 
@@ -45,6 +46,15 @@ export const GET: APIRoute = async ({ params, request, locals }) => {
     }
   } catch (error) {
     return new Response(`Download tracking unavailable: ${error}`, { status: 503 });
+  }
+
+  // Record the download in the daily analytics table too. Like the lifetime
+  // counter above this is best-effort: a failure to log analytics must not stop
+  // the visitor from reaching the bundle they asked for.
+  try {
+    await trackDownload(getDB(locals), id);
+  } catch (error) {
+    console.error(`Failed to record a download for "${id}"`, error);
   }
 
   return new Response(null, {

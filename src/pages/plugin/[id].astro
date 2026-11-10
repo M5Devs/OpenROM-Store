@@ -15,6 +15,7 @@ import {
 import { renderMarkdown } from '../../lib/markdown';
 import { compatibilityFor, detectOS, supportedLabel } from '../../lib/detectOS';
 import { formatReleaseDate, isNewerVersion } from '../../lib/version';
+import { trackView } from '../../lib/analytics';
 
 export const prerender = false;
 
@@ -25,8 +26,10 @@ const id = Astro.params.id ?? '';
 // 500 — mirror the publisher page and report it as a 503 instead.
 let plugin = null;
 let dbError = false;
+let db: D1Database | null = null;
 try {
-  plugin = await getPlugin(getDB(Astro.locals), id);
+  db = getDB(Astro.locals);
+  plugin = await getPlugin(db, id);
 } catch (error) {
   console.error(`Failed to load plugin "${id}"`, error);
   dbError = true;
@@ -36,6 +39,17 @@ if (dbError) {
   Astro.response.status = 503;
 } else if (!plugin) {
   Astro.response.status = 404;
+}
+
+// Count the view. This is best-effort on purpose: analytics must never turn a
+// working page into an error page, so a failed write is logged and swallowed.
+// Only a real listing is counted, so 404s do not inflate the numbers.
+if (plugin && db) {
+  try {
+    await trackView(db, plugin.id);
+  } catch (error) {
+    console.error(`Failed to record a view for "${id}"`, error);
+  }
 }
 
 // The release ledger. A pre-0010 database has no `plugin_versions` table, which

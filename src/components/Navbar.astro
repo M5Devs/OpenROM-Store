@@ -1,5 +1,6 @@
 ---
 import { SITE } from '../lib/site';
+import Icon from './Icon.astro';
 
 interface NavbarUser {
   githubUsername: string;
@@ -97,7 +98,48 @@ const searchValue = Astro.url.searchParams.get('q') ?? '';
 
       {
         user ? (
-          <div data-user-menu class="relative">
+          <div class="flex items-center gap-2">
+            <div data-inbox class="relative">
+              <button
+                type="button"
+                data-inbox-trigger
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-label="Notifications"
+                class="relative grid h-10 w-10 place-items-center rounded-lg border border-zinc-800 text-zinc-300 transition hover:border-zinc-700 hover:text-white"
+              >
+                <Icon name="bell" class="h-5 w-5" />
+                <span
+                  data-inbox-badge
+                  class="absolute -right-1 -top-1 hidden min-w-[1.1rem] rounded-full bg-red-500 px-1 text-center text-[0.65rem] font-semibold leading-[1.1rem] text-white"
+                >
+                  0
+                </span>
+              </button>
+
+              <div
+                data-inbox-panel
+                role="dialog"
+                aria-label="Notifications"
+                class="absolute right-0 z-50 mt-2 hidden w-80 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/95 shadow-2xl backdrop-blur-xl sm:w-96"
+              >
+                <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+                  <p class="text-sm font-semibold text-zinc-100">Notifications</p>
+                  <button
+                    type="button"
+                    data-inbox-read-all
+                    class="text-xs font-medium text-cyan-300 transition hover:text-cyan-200"
+                  >
+                    Mark all as read
+                  </button>
+                </div>
+                <div data-inbox-list class="max-h-96 overflow-y-auto">
+                  <p class="px-4 py-6 text-center text-sm text-zinc-500">Loading…</p>
+                </div>
+              </div>
+            </div>
+
+            <div data-user-menu class="relative">
             <button
               type="button"
               data-user-menu-trigger
@@ -163,6 +205,7 @@ const searchValue = Astro.url.searchParams.get('q') ?? '';
                   </button>
                 </form>
               </div>
+            </div>
             </div>
           </div>
         ) : (
@@ -231,4 +274,168 @@ const searchValue = Astro.url.searchParams.get('q') ?? '';
   });
 
   syncClearButton();
+
+  // --- Notification inbox ---
+  interface InboxNotification {
+    id: number;
+    type: string;
+    title: string;
+    message: string;
+    actionUrl: string | null;
+    data: { publisher_id?: string; role?: string } | null;
+    isRead: boolean;
+    createdAt: string;
+  }
+
+  const inbox = document.querySelector<HTMLElement>('[data-inbox]');
+  const inboxTrigger = inbox?.querySelector<HTMLElement>('[data-inbox-trigger]');
+  const inboxPanel = inbox?.querySelector<HTMLElement>('[data-inbox-panel]');
+  const inboxList = inbox?.querySelector<HTMLElement>('[data-inbox-list]');
+  const inboxBadge = inbox?.querySelector<HTMLElement>('[data-inbox-badge]');
+  const readAllButton = inbox?.querySelector<HTMLElement>('[data-inbox-read-all]');
+
+  function setBadge(count: number) {
+    if (!inboxBadge) return;
+    inboxBadge.textContent = count > 99 ? '99+' : String(count);
+    inboxBadge.classList.toggle('hidden', count <= 0);
+  }
+
+  /** Escape untrusted notification text before it goes into innerHTML. */
+  function escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case '&': return '&amp;';
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '"': return '&quot;';
+        default: return '&#39;';
+      }
+    });
+  }
+
+  function iconFor(type: string): string {
+    if (type === 'team_invite') return '📨';
+    if (type === 'plugin_approved') return '✅';
+    if (type === 'admin_alert') return '⚠️';
+    return '🔔';
+  }
+
+  function renderNotification(item: InboxNotification): string {
+    const isInvite = item.type === 'team_invite' && item.data?.publisher_id;
+    const actions = isInvite
+      ? `<div class="mt-2 flex gap-2">
+           <button type="button" data-invite-action="accept" data-publisher="${escapeHtml(item.data!.publisher_id!)}"
+             class="inline-flex h-8 items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-semibold text-cyan-300 transition hover:bg-cyan-500/20">
+             Accept ✅
+           </button>
+           <button type="button" data-invite-action="decline" data-publisher="${escapeHtml(item.data!.publisher_id!)}"
+             class="inline-flex h-8 items-center gap-1 rounded-lg border border-zinc-700 px-3 text-xs font-medium text-zinc-300 transition hover:bg-zinc-800">
+             Decline ❌
+           </button>
+         </div>`
+      : '';
+    const link = item.actionUrl
+      ? `<a href="${escapeHtml(item.actionUrl)}" class="mt-1 inline-block text-xs text-cyan-300 transition hover:text-cyan-200">View →</a>`
+      : '';
+    return `<div class="border-b border-zinc-900 px-4 py-3 ${item.isRead ? '' : 'bg-cyan-500/5'}">
+      <div class="flex items-start gap-2">
+        <span aria-hidden="true">${iconFor(item.type)}</span>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-zinc-100">${escapeHtml(item.title)}</p>
+          <p class="mt-0.5 text-xs leading-relaxed text-zinc-400">${escapeHtml(item.message)}</p>
+          ${actions}
+          ${link}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  async function loadInbox() {
+    if (!inboxList) return;
+    try {
+      const response = await fetch('/api/notifications', { headers: { Accept: 'application/json' } });
+      if (!response.ok) throw new Error('failed');
+      const data = (await response.json()) as { notifications: InboxNotification[]; unread: number };
+      setBadge(data.unread);
+      inboxList.innerHTML =
+        data.notifications.length === 0
+          ? '<p class="px-4 py-6 text-center text-sm text-zinc-500">You have no notifications yet.</p>'
+          : data.notifications.map(renderNotification).join('');
+    } catch {
+      inboxList.innerHTML =
+        '<p class="px-4 py-6 text-center text-sm text-zinc-500">Could not load your inbox.</p>';
+    }
+  }
+
+  function closeInbox() {
+    inboxPanel?.classList.add('hidden');
+    inboxTrigger?.setAttribute('aria-expanded', 'false');
+  }
+
+  inboxTrigger?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const open = inboxPanel?.classList.toggle('hidden') === false;
+    inboxTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) void loadInbox();
+  });
+
+  readAllButton?.addEventListener('click', async (event) => {
+    event.stopPropagation();
+    try {
+      const response = await fetch('/api/notifications/read-all', { method: 'POST' });
+      if (response.ok) {
+        setBadge(0);
+        void loadInbox();
+      }
+    } catch {
+      /* Leave the badge as-is; the next open retries. */
+    }
+  });
+
+  // Accept/Decline act on an invitation without leaving the page.
+  inboxList?.addEventListener('click', async (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLElement>('[data-invite-action]');
+    if (!button) return;
+    const action = button.dataset.inviteAction;
+    const publisherId = button.dataset.publisher ?? '';
+    button.setAttribute('disabled', 'true');
+    try {
+      const response = await fetch(
+        `/api/publishers/${encodeURIComponent(publisherId)}/team/respond`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        },
+      );
+      if (response.ok) {
+        // The badge changed (the invite was marked read), so refresh the list.
+        void loadInbox();
+      } else {
+        button.removeAttribute('disabled');
+      }
+    } catch {
+      button.removeAttribute('disabled');
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!inbox?.contains(event.target as Node)) closeInbox();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeInbox();
+  });
+
+  // Paint the unread badge on load, without opening the panel.
+  if (inbox) {
+    void fetch('/api/notifications', { headers: { Accept: 'application/json' } })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { unread: number } | null) => {
+        if (data) setBadge(data.unread);
+      })
+      .catch(() => {
+        /* A failed badge fetch must not disturb the page. */
+      });
+  }
 </script>

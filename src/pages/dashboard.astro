@@ -5,6 +5,7 @@ import { getSessionUser } from '../lib/auth';
 import { getDB } from '../lib/db';
 import { getUserProfile, type UserProfile } from '../lib/users';
 import { listPublishersForOwner, type Publisher } from '../lib/publishers';
+import { listAccessiblePublishers, type PublisherAccess } from '../lib/teams';
 
 export const prerender = false;
 
@@ -20,13 +21,20 @@ let user: Pick<UserProfile, 'githubId' | 'githubUsername' | 'name' | 'avatarUrl'
   avatarUrl: session.avatarUrl ?? '',
 };
 let publishers: Publisher[] = [];
+let sharedPublishers: PublisherAccess[] = [];
 let dbError: string | null = null;
 try {
   user = await getUserProfile(getDB(Astro.locals), session);
   publishers = await listPublishersForOwner(getDB(Astro.locals), session.githubId);
+  sharedPublishers = await listAccessiblePublishers(getDB(Astro.locals), session.githubId);
 } catch (error) {
   dbError = error instanceof Error ? error.message : String(error);
 }
+
+// A publisher the user owns already appears in `publishers`; the shared list is for
+// ones they collaborate on, so filter out anything they own to avoid a duplicate row.
+const ownedIds = new Set(publishers.map((publisher) => publisher.id));
+const collaborations = sharedPublishers.filter((entry) => !ownedIds.has(entry.publisher.id));
 
 const usernameSlug = session.githubUsername.toLowerCase();
 const ownsUsernameSlug = publishers.some((publisher) => publisher.id === usernameSlug);
@@ -74,7 +82,6 @@ const ownsUsernameSlug = publishers.some((publisher) => publisher.id === usernam
         <h2 class="text-sm font-semibold text-zinc-300">Your publishers</h2>
         <span class="text-xs text-zinc-600">{publishers.length} registered</span>
       </div>
-
       {
         dbError ? (
           <p class="mt-4 rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-300">
@@ -129,6 +136,50 @@ const ownsUsernameSlug = publishers.some((publisher) => publisher.id === usernam
         )
       }
     </section>
+
+    {
+      collaborations.length > 0 && (
+        <section class="mt-10">
+          <div class="flex items-baseline justify-between">
+            <h2 class="text-sm font-semibold text-zinc-300">Shared with you</h2>
+            <span class="text-xs text-zinc-600">{collaborations.length} team{collaborations.length === 1 ? '' : 's'}</span>
+          </div>
+          <ul class="mt-4 flex flex-col gap-2">
+            {collaborations.map((entry) => (
+              <li class="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3">
+                <Icon name="layers" class="h-4 w-4 shrink-0 text-zinc-500" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5">
+                    <span class="truncate font-mono text-sm text-zinc-100">{entry.publisher.id}</span>
+                    {entry.publisher.verified && (
+                      <Icon name="badge-check" class="h-4 w-4 shrink-0 text-cyan-400" />
+                    )}
+                  </div>
+                  <p class="truncate text-xs text-zinc-500">{entry.publisher.name}</p>
+                </div>
+                <span class="shrink-0 rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-[0.7rem] font-medium text-cyan-300">
+                  {entry.role}
+                </span>
+                {
+                  entry.status !== 'accepted' && (
+                    <span class="shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[0.7rem] font-medium text-amber-300">
+                      {entry.status}
+                    </span>
+                  )
+                }
+                <a
+                  href={`/dashboard/publisher/${entry.publisher.id}`}
+                  class="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-800 px-3 text-xs font-medium text-zinc-300 transition hover:border-cyan-500/40 hover:text-cyan-300"
+                >
+                  <Icon name="external-link" class="h-3.5 w-3.5" />
+                  Open
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
 
     <section class="mt-10 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6">
       <h2 class="text-sm font-semibold text-zinc-200">Create a publisher</h2>

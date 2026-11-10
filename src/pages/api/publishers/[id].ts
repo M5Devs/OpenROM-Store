@@ -4,6 +4,7 @@ import { getSessionUser, jsonResponse } from '../../../lib/auth';
 import { loadPublisherProfile } from '../../../lib/publisher-profile';
 import { validateImageOrUrl } from '../../../lib/media';
 import { AVATAR_LIMITS, BANNER_LIMITS, type ImageLimits } from '../../../lib/image';
+import { authorizePublisher } from '../../../lib/teams';
 import {
   getPublisher,
   updatePublisherProfile,
@@ -118,9 +119,9 @@ function draftFrom(publisher: Publisher): PublisherProfileInput {
 }
 
 /**
- * Update the publisher's branding. Only the owner may edit, and only the fields in
- * `EDITABLE_FIELDS` are honoured — `id`, `verified`, and `owner_github_id` are never
- * taken from the request body.
+ * Update the publisher's branding. Requires the `edit_profile` capability (owner,
+ * admin, or contributor), and only the fields in `EDITABLE_FIELDS` are honoured —
+ * `id`, `verified`, and `owner_github_id` are never taken from the request body.
  */
 export const PATCH: APIRoute = async (context) => {
   const id = context.params.id ?? '';
@@ -141,27 +142,36 @@ export const PATCH: APIRoute = async (context) => {
   }
 
   let db: D1Database;
-  let publisher;
   try {
     db = getDB(context.locals);
-    publisher = await getPublisher(db, id);
   } catch (error) {
     console.error(`Failed to load publisher "${id}"`, error);
     return jsonResponse({ error: 'The publisher directory is temporarily unavailable.' }, 503);
   }
-  if (!publisher) return jsonResponse({ error: `Publisher "${id}" was not found.` }, 404);
-  if (publisher.ownerGithubId !== session.githubId) {
-    return jsonResponse({ error: 'You do not own this publisher.' }, 403);
+
+  const access = await authorizePublisher(db, id, session.githubId, 'edit_profile');
+  if (access.status === 'error') {
+    console.error(`Failed to authorize profile edit for "${id}"`, access.error);
+    return jsonResponse({ error: 'The publisher directory is temporarily unavailable.' }, 503);
+  }
+  if (access.status === 'not-found') {
+    return jsonResponse({ error: `Publisher "${id}" was not found.` }, 404);
+  }
+  if (access.status === 'forbidden') {
+    return jsonResponse({ error: 'You do not have permission to edit this publisher.' }, 403);
   }
 
-  const draft = draftFrom(publisher);
+  const draft = draftFrom(access.publisher);
   for (const field of EDITABLE_FIELDS) {
     if (!(field.key in body)) continue;
     const error = field.apply(body[field.key], draft);
     if (error) return jsonResponse({ error }, 400);
   }
 
-  const updated = await updatePublisherProfile(db, id, session.githubId, draft);
+  // `updatePublisherProfile` still scopes the write to the owner column, so an
+  // admin/contributor edit is applied through the owner's id (which is what the
+  // publisher row carries) rather than the caller's.
+  const updated = await updatePublisherProfile(db, id, access.publisher.ownerGithubId, draft);
   if (!updated) {
     return jsonResponse({ error: 'Could not update the publisher.' }, 500);
   }

@@ -3,9 +3,19 @@ import Layout from '../../../layouts/Layout.astro';
 import Icon from '../../../components/Icon.astro';
 import ImageField from '../../../components/ImageField.astro';
 import { getSessionUser } from '../../../lib/auth';
-import { getDB } from '../../../lib/db';
+import { getDB, listPluginsByPublisher } from '../../../lib/db';
 import { getPublisher } from '../../../lib/publishers';
 import { initialsFor } from '../../../lib/site';
+import { getPublisherAnalytics, type AnalyticsSummary } from '../../../lib/analytics';
+import {
+  can,
+  getMember,
+  getPendingDeletionRequest,
+  listTeam,
+  resolveMembership,
+  type DeletionRequest,
+  type TeamMemberView,
+} from '../../../lib/teams';
 import {
   AVATAR_MAX_DIMENSION,
   BANNER_MAX_DIMENSION,
@@ -25,22 +35,90 @@ const id = Astro.params.id ?? '';
 // and take the whole page down as an unhandled 500.
 let publisher = null;
 let dbError = false;
+let db: D1Database | null = null;
 try {
-  publisher = await getPublisher(getDB(Astro.locals), id);
+  db = getDB(Astro.locals);
+  publisher = await getPublisher(db, id);
 } catch (error) {
   console.error(`Failed to load publisher "${id}" for editing`, error);
   dbError = true;
 }
 
-if (dbError) {
+if (dbError || !db) {
   return new Response('Publisher editing is temporarily unavailable.', { status: 503 });
 }
 if (!publisher) {
   return new Response(null, { status: 404 });
 }
-if (publisher.ownerGithubId !== session.githubId) {
+
+// Anyone with an accepted membership may open the dashboard; each section below is
+// gated on the capability it needs, so a viewer sees analytics and nothing else.
+let memberRow = null;
+try {
+  memberRow = await getMember(db, id, session.githubId);
+} catch (error) {
+  console.error(`Failed to load membership for "${id}"`, error);
+}
+const membership = resolveMembership(publisher, memberRow, session.githubId);
+if (!membership || !membership.active) {
   return Astro.redirect('/dashboard', 302);
 }
+
+const canViewAnalytics = can(membership.role, 'view_analytics');
+const canEditProfile = can(membership.role, 'edit_profile');
+const canManageTeam = can(membership.role, 'invite_members');
+const canRequestDeletion = can(membership.role, 'request_deletion');
+
+let analytics: AnalyticsSummary = {
+  totalViews: 0,
+  totalDownloads: 0,
+  conversionRate: null,
+  plugins: [],
+};
+let team: TeamMemberView[] = [];
+let deletionRequest: DeletionRequest | null = null;
+// Rows for the analytics table: every plugin the publisher owns, merged with its
+// analytics so a listing with no traffic yet still appears (as a zero row) instead
+// of silently missing from the table.
+let analyticsRows: Array<{ id: string; name: string; views: number; downloads: number; rate: number | null }> = [];
+if (canViewAnalytics) {
+  try {
+    analytics = await getPublisherAnalytics(db, publisher.id, publisher.name);
+    const plugins = await listPluginsByPublisher(db, publisher.id, publisher.name);
+    const byId = new Map(analytics.plugins.map((entry) => [entry.pluginId, entry]));
+    analyticsRows = plugins.map((plugin) => {
+      const entry = byId.get(plugin.id);
+      return {
+        id: plugin.id,
+        name: plugin.name,
+        views: entry?.views ?? 0,
+        downloads: entry?.downloads ?? 0,
+        rate: entry?.conversionRate ?? null,
+      };
+    });
+  } catch (error) {
+    console.error(`Failed to load analytics for "${id}"`, error);
+  }
+}
+try {
+  team = await listTeam(db, id);
+} catch (error) {
+  console.error(`Failed to load the team for "${id}"`, error);
+}
+if (canRequestDeletion) {
+  try {
+    deletionRequest = await getPendingDeletionRequest(db, id);
+  } catch (error) {
+    console.error(`Failed to load deletion requests for "${id}"`, error);
+  }
+}
+
+const roleLabel: Record<string, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  contributor: 'Contributor',
+  viewer: 'Viewer',
+};
 
 const initials = initialsFor(publisher.name);
 
@@ -101,7 +179,14 @@ const socialFields = [
           )
         }
         <div>
-          <h1 class="text-xl font-bold tracking-tight text-white">Customize publisher</h1>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xl font-bold tracking-tight text-white">
+              {canEditProfile ? 'Customize publisher' : publisher.name}
+            </h1>
+            <span class="rounded-md border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-[0.7rem] font-medium text-cyan-300">
+              {roleLabel[membership.role]}
+            </span>
+          </div>
           <p class="font-mono text-xs text-zinc-500">@{publisher.id}</p>
         </div>
       </div>
@@ -116,6 +201,21 @@ const socialFields = [
     </header>
 
     {
+      deletionRequest && (
+        <div class="mt-5 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+          <p class="flex items-center gap-2 text-sm font-semibold text-amber-300">
+            <Icon name="alert-triangle" class="h-4 w-4" />
+            Deletion request pending review
+          </p>
+          <p class="mt-1 text-xs leading-relaxed text-amber-200/80">
+            Filed {deletionRequest.createdAt.slice(0, 10)}. An operator reviews the request
+            before anything is removed. Reason on file: “{deletionRequest.reason}”
+          </p>
+        </div>
+      )
+    }
+
+    {
       publisher.verified && (
         <p class="mt-5 inline-flex items-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-300">
           <span aria-hidden="true">💙</span>
@@ -124,10 +224,12 @@ const socialFields = [
       )
     }
 
-    <form data-profile-form class="mt-8 flex flex-col gap-6">
-      <section class="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6">
-        <h2 class="text-sm font-semibold text-zinc-200">Identity</h2>
-        <div class="mt-4 flex flex-col gap-4">
+    {
+      canEditProfile && (
+        <form data-profile-form class="mt-8 flex flex-col gap-6">
+          <section class="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-6">
+            <h2 class="text-sm font-semibold text-zinc-200">Identity</h2>
+            <div class="mt-4 flex flex-col gap-4">
           <label class="flex flex-col gap-1.5">
             <span class="text-xs font-medium text-zinc-400">Display name</span>
             <input
@@ -218,7 +320,208 @@ const socialFields = [
         </button>
         <span data-form-status class="text-sm" role="status" aria-live="polite"></span>
       </div>
-    </form>
+        </form>
+      )
+    }
+
+    {
+      canViewAnalytics && (
+        <section class="mt-10">
+          <h2 class="text-sm font-semibold text-zinc-200">Analytics</h2>
+          <p class="mt-1 text-xs text-zinc-500">Lifetime views and downloads across this publisher.</p>
+
+          <div class="mt-4 grid gap-4 sm:grid-cols-3">
+            <div class="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
+              <p class="text-xs font-medium text-zinc-500">Total views</p>
+              <p class="mt-1 text-2xl font-bold text-white">{analytics.totalViews.toLocaleString()}</p>
+            </div>
+            <div class="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
+              <p class="text-xs font-medium text-zinc-500">Total downloads</p>
+              <p class="mt-1 text-2xl font-bold text-white">{analytics.totalDownloads.toLocaleString()}</p>
+            </div>
+            <div class="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5">
+              <p class="text-xs font-medium text-zinc-500">View → download</p>
+              <p class="mt-1 text-2xl font-bold text-cyan-300">
+                {analytics.conversionRate === null ? '—' : `${analytics.conversionRate}%`}
+              </p>
+            </div>
+          </div>
+
+          {
+            analyticsRows.length > 0 ? (
+              <div class="mt-4 overflow-hidden rounded-2xl border border-zinc-800">
+                <table class="w-full text-left text-sm">
+                  <thead class="bg-zinc-900/60 text-xs uppercase tracking-wide text-zinc-500">
+                    <tr>
+                      <th scope="col" class="px-4 py-3 font-medium">Extension</th>
+                      <th scope="col" class="px-4 py-3 text-right font-medium">Views</th>
+                      <th scope="col" class="px-4 py-3 text-right font-medium">Downloads</th>
+                      <th scope="col" class="px-4 py-3 text-right font-medium">Conversion</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-zinc-800">
+                    {analyticsRows.map((row) => (
+                      <tr class="bg-zinc-950/40">
+                        <td class="px-4 py-3">
+                          <a
+                            href={`/plugin/${row.id}`}
+                            class="font-medium text-zinc-100 transition hover:text-cyan-300"
+                          >
+                            {row.name}
+                          </a>
+                          <span class="ml-2 font-mono text-xs text-zinc-600">{row.id}</span>
+                        </td>
+                        <td class="px-4 py-3 text-right tabular-nums text-zinc-300">
+                          {row.views.toLocaleString()}
+                        </td>
+                        <td class="px-4 py-3 text-right tabular-nums text-zinc-300">
+                          {row.downloads.toLocaleString()}
+                        </td>
+                        <td class="px-4 py-3 text-right tabular-nums text-cyan-300">
+                          {row.rate === null ? '—' : `${row.rate}%`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p class="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-6 text-sm text-zinc-400">
+                No extensions yet, so there is nothing to measure.
+              </p>
+            )
+          }
+        </section>
+      )
+    }
+
+    <section class="mt-10">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-zinc-200">Team</h2>
+          <p class="mt-1 text-xs text-zinc-500">
+            {canManageTeam
+              ? 'Invite collaborators by GitHub username and give them a role.'
+              : 'People with access to this publisher.'}
+          </p>
+        </div>
+      </div>
+
+      {
+        team.length > 0 && (
+          <ul class="mt-4 flex flex-col gap-2">
+            {team.map((member) => (
+              <li class="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3">
+                {member.avatarUrl ? (
+                  <img
+                    src={member.avatarUrl}
+                    alt=""
+                    width="32"
+                    height="32"
+                    referrerpolicy="no-referrer"
+                    class="h-8 w-8 rounded-lg object-cover ring-1 ring-inset ring-zinc-700"
+                  />
+                ) : (
+                  <span class="grid h-8 w-8 place-items-center rounded-lg bg-zinc-800 text-xs font-semibold text-zinc-300">
+                    {member.githubUsername.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm text-zinc-100">
+                    {member.name ?? member.githubUsername}
+                  </p>
+                  <p class="truncate text-xs text-zinc-500">@{member.githubUsername}</p>
+                </div>
+                <span class="shrink-0 rounded-md border border-zinc-700 px-2 py-0.5 text-[0.7rem] font-medium text-zinc-300">
+                  {roleLabel[member.userGithubId === publisher.ownerGithubId ? 'owner' : member.role] ?? member.role}
+                </span>
+                {
+                  member.status !== 'accepted' && (
+                    <span class="shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[0.7rem] font-medium text-amber-300">
+                      {member.status}
+                    </span>
+                  )
+                }
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      {
+        canManageTeam && (
+          <form data-invite-form class="mt-4 flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-5 sm:flex-row sm:items-end">
+            <label class="flex flex-1 flex-col gap-1.5">
+              <span class="text-xs font-medium text-zinc-400">GitHub username</span>
+              <input
+                name="username"
+                required
+                autocomplete="off"
+                placeholder="octocat"
+                class="h-10 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+              />
+            </label>
+            <label class="flex flex-col gap-1.5">
+              <span class="text-xs font-medium text-zinc-400">Role</span>
+              <select
+                name="role"
+                class="h-10 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 text-sm text-zinc-100 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+              >
+                <option value="contributor">Contributor</option>
+                <option value="admin">Admin</option>
+                <option value="viewer">Viewer</option>
+              </select>
+            </label>
+            <button
+              type="submit"
+              class="inline-flex h-10 items-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-purple-500 px-5 text-sm font-semibold text-zinc-950 transition hover:from-cyan-400 hover:to-purple-400 disabled:opacity-60"
+            >
+              <Icon name="message-circle" class="h-4 w-4" />
+              Send invite
+            </button>
+            <span data-invite-status class="text-sm sm:self-center" role="status" aria-live="polite"></span>
+          </form>
+        )
+      }
+    </section>
+
+    {
+      canRequestDeletion && !deletionRequest && (
+        <section class="mt-10 rounded-2xl border border-red-500/30 bg-red-500/5 p-6">
+          <h2 class="flex items-center gap-2 text-sm font-semibold text-red-300">
+            <Icon name="alert-triangle" class="h-4 w-4" />
+            Danger zone
+          </h2>
+          <p class="mt-1 text-xs leading-relaxed text-red-200/80">
+            Deleting a publisher removes its listings and download links and cannot be undone.
+            Instead of deleting outright, file a request and an operator will review it.
+          </p>
+          <form data-deletion-form class="mt-4 flex flex-col gap-3">
+            <label class="flex flex-col gap-1.5">
+              <span class="text-xs font-medium text-red-200/80">Reason for deletion</span>
+              <textarea
+                name="reason"
+                rows="3"
+                required
+                minlength="10"
+                maxlength="1000"
+                placeholder="Explain why this publisher should be removed."
+                class="rounded-lg border border-red-500/30 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-red-500/50 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+              ></textarea>
+            </label>
+            <div class="flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                class="inline-flex h-10 items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-5 text-sm font-semibold text-red-300 transition hover:bg-red-500/20 disabled:opacity-60"
+              >
+                Request deletion
+              </button>
+              <span data-deletion-status class="text-sm" role="status" aria-live="polite"></span>
+            </div>
+          </form>
+        </section>
+      )
+    }
   </main>
 </Layout>
 
@@ -237,7 +540,6 @@ const socialFields = [
     event.preventDefault();
     const data = new FormData(form);
     const id = decodeURIComponent(location.pathname.split('/').pop() ?? '');
-
     const payload = {
       name: data.get('name'),
       bio: data.get('bio'),
@@ -270,6 +572,82 @@ const socialFields = [
       setStatus('Network error — please try again.', 'error');
     } finally {
       submit?.removeAttribute('disabled');
+    }
+  });
+
+  // --- Team invite ---
+  const inviteForm = document.querySelector<HTMLFormElement>('[data-invite-form]');
+  const inviteStatus = document.querySelector<HTMLElement>('[data-invite-status]');
+
+  function setInviteStatus(message: string, kind: 'ok' | 'error') {
+    if (!inviteStatus) return;
+    inviteStatus.textContent = message;
+    inviteStatus.className = 'text-sm ' + (kind === 'ok' ? 'text-cyan-300' : 'text-red-400');
+  }
+
+  inviteForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = new FormData(inviteForm);
+    const id = decodeURIComponent(location.pathname.split('/').pop() ?? '');
+    const button = inviteForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+    button?.setAttribute('disabled', 'true');
+    setInviteStatus('Sending…', 'ok');
+
+    try {
+      const response = await fetch(`/api/publishers/${encodeURIComponent(id)}/team/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: data.get('username'), role: data.get('role') }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setInviteStatus(result.error ?? 'Could not send the invitation.', 'error');
+        return;
+      }
+      setInviteStatus('Invitation sent.', 'ok');
+      location.reload();
+    } catch {
+      setInviteStatus('Network error — please try again.', 'error');
+    } finally {
+      button?.removeAttribute('disabled');
+    }
+  });
+
+  // --- Deletion request ---
+  const deletionForm = document.querySelector<HTMLFormElement>('[data-deletion-form]');
+  const deletionStatus = document.querySelector<HTMLElement>('[data-deletion-status]');
+
+  function setDeletionStatus(message: string, kind: 'ok' | 'error') {
+    if (!deletionStatus) return;
+    deletionStatus.textContent = message;
+    deletionStatus.className = 'text-sm ' + (kind === 'ok' ? 'text-amber-300' : 'text-red-400');
+  }
+
+  deletionForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = new FormData(deletionForm);
+    const id = decodeURIComponent(location.pathname.split('/').pop() ?? '');
+    const button = deletionForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+    button?.setAttribute('disabled', 'true');
+    setDeletionStatus('Filing request…', 'ok');
+
+    try {
+      const response = await fetch(`/api/publishers/${encodeURIComponent(id)}/request-deletion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: data.get('reason') }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setDeletionStatus(result.error ?? 'Could not file the request.', 'error');
+        return;
+      }
+      setDeletionStatus('Request filed for review.', 'ok');
+      location.reload();
+    } catch {
+      setDeletionStatus('Network error — please try again.', 'error');
+    } finally {
+      button?.removeAttribute('disabled');
     }
   });
 </script>
