@@ -1,4 +1,7 @@
 User-agent: *
 Allow: /
+Disallow: /dashboard/
+Disallow: /api/
 
+# Served by src/pages/sitemap.xml.ts, which enumerates the live D1 catalog.
 Sitemap: https://openrom-store.pages.dev/sitemap.xml
