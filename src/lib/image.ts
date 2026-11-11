@@ -117,6 +117,33 @@ function isWebp(bytes: Uint8Array): boolean {
   );
 }
 
+function isGif(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 6 &&
+    bytes[0] === 0x47 && // "GIF"
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38 &&
+    (bytes[4] === 0x37 || bytes[4] === 0x39) && // "7" or "9"
+    bytes[5] === 0x61 // "a"
+  );
+}
+
+/**
+ * The image format a byte sequence actually is, from its magic bytes alone.
+ *
+ * The edge proxy uses this instead of trusting the upstream `Content-Type`:
+ * SourceForge labels every asset `application/octet-stream`, so the only honest
+ * source of the type is the payload itself.
+ */
+export function sniffImageType(bytes: Uint8Array): 'png' | 'jpeg' | 'webp' | 'gif' | null {
+  if (isPng(bytes)) return 'png';
+  if (isJpeg(bytes)) return 'jpeg';
+  if (isWebp(bytes)) return 'webp';
+  if (isGif(bytes)) return 'gif';
+  return null;
+}
+
 function readUint16LE(bytes: Uint8Array, offset: number): number {
   return bytes[offset] | (bytes[offset + 1] << 8);
 }
