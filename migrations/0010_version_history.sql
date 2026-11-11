@@ -59,5 +59,5 @@ VALUES
     '2.0.0',
     '4.0.0',
     'https://downloads.sourceforge.net/project/openrom-skins/m5dev/anime-tsundere/2.0.0/anime-tsundere-2.0.0.orskin',
-    '45f4830ae52da3890d6e2fa01ef1a213619dab72b8795b4d7954667f8744cac4'
+    'b756958cb75a9a914e6f22e49b51327bd82b994bd7b0eac3099ba9a400873ec7'
   );

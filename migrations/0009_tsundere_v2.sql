@@ -25,6 +25,12 @@
 -- wallpaper/preview plus the v2 deluxe additions (Silkscreen `font.ttf`,
 -- illustrated `dropzone.png`, and seven 24x24 tinted navigation icons).
 --
+-- The bundled `preview.png` was re-captured with OpenROM 4.1.0 — the first
+-- release whose engine actually loads the v2 assets — so the storefront
+-- screenshot shows the live Silkscreen type, the tinted sidebar icons, and the
+-- dropzone illustration instead of the earlier mock-up. Re-packing the same
+-- staged files reproduces the digest below byte for byte.
+--
 -- Re-running is safe and never resets a live download counter: the upsert updates
 -- every column *except* `downloads`, so the real count survives re-application.
 --
@@ -102,7 +108,7 @@ and import it from *Settings → Appearance → Import…*. Requires OpenROM Cor
     '["#120e1f", "#1a142e", "#ff4d8d", "#70d6ff", "#ffffff"]',
     '["All Platforms"]',
     'https://downloads.sourceforge.net/project/openrom-skins/m5dev/anime-tsundere/2.0.0/anime-tsundere-2.0.0.orskin',
-    '45f4830ae52da3890d6e2fa01ef1a213619dab72b8795b4d7954667f8744cac4',
+    'b756958cb75a9a914e6f22e49b51327bd82b994bd7b0eac3099ba9a400873ec7',
     'palette',
     '["https://downloads.sourceforge.net/project/openrom-skins/m5dev/anime-tsundere/2.0.0/preview.png"]',
     0
