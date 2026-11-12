@@ -7,8 +7,8 @@ export const SITE = {
     'Community-built extensions for OpenROM — conversion, verification, and patching tools for retro-gaming preservation.',
   github: 'https://github.com/M5Devs/OpenROM-Plugins-Store',
   discord: 'https://discord.gg/FYEjpcFYXc',
-  contributing:
-    'https://github.com/M5Devs/OpenROM-Plugins-Store/blob/main/CONTRIBUTING.md',
+  /** In-store creator guide. Replaced the old external CONTRIBUTING.md link. */
+  publish: '/publish',
 } as const;
 
 /** Shown when the catalog is genuinely empty — never replaced with fake rows. */

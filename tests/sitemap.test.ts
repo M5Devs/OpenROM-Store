@@ -77,22 +77,31 @@ test('buildSitemapEntries lists the homepage first with priority 1.0', () => {
   assert.deepEqual(entries[0], { loc: `${SITE_ORIGIN}/`, priority: '1.0' });
 });
 
+test('buildSitemapEntries lists the static /publish guide right after the homepage', () => {
+  const entries = buildSitemapEntries([PLUGIN], [PUBLISHER]);
+  assert.deepEqual(entries[1], { loc: `${SITE_ORIGIN}/publish`, priority: '0.7' });
+});
+
 test('buildSitemapEntries emits plugin and publisher URLs from the live rows', () => {
   const entries = buildSitemapEntries([PLUGIN], [PUBLISHER]);
   assert.deepEqual(
     entries.map((entry) => entry.loc),
     [
       `${SITE_ORIGIN}/`,
+      `${SITE_ORIGIN}/publish`,
       `${SITE_ORIGIN}/plugin/nkit`,
       `${SITE_ORIGIN}/publisher/m5dev`,
     ],
   );
-  assert.equal(entries[1].lastmod, '2026-01-02');
-  assert.equal(entries[2].lastmod, '2025-12-31');
+  assert.equal(entries[2].lastmod, '2026-01-02');
+  assert.equal(entries[3].lastmod, '2025-12-31');
 });
 
-test('buildSitemapEntries produces only the homepage for an empty catalog', () => {
-  assert.deepEqual(buildSitemapEntries([], []), [{ loc: `${SITE_ORIGIN}/`, priority: '1.0' }]);
+test('buildSitemapEntries keeps the homepage and /publish for an empty catalog', () => {
+  assert.deepEqual(buildSitemapEntries([], []), [
+    { loc: `${SITE_ORIGIN}/`, priority: '1.0' },
+    { loc: `${SITE_ORIGIN}/publish`, priority: '0.7' },
+  ]);
 });
 
 test('buildSitemapEntries never emits a route pattern or a private path', () => {
@@ -104,8 +113,8 @@ test('buildSitemapEntries never emits a route pattern or a private path', () => 
 
 test('buildSitemapEntries percent-encodes an id rather than emitting raw characters', () => {
   const entries = buildSitemapEntries([{ id: 'a b/c', created_at: null }], []);
-  assert.equal(entries[1].loc, `${SITE_ORIGIN}/plugin/a%20b%2Fc`);
-  assert.equal(entries[1].lastmod, undefined);
+  assert.equal(entries[2].loc, `${SITE_ORIGIN}/plugin/a%20b%2Fc`);
+  assert.equal(entries[2].lastmod, undefined);
 });
 
 // --- the D1 queries ---------------------------------------------------------

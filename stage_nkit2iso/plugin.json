@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "id": "nkit2iso",
+  "name": "NKit2ISO",
+  "version": "0.1.0",
+  "minCoreVersion": "4.0.0",
+  "description": "Fast, dependency-free Go utility to restore GameCube and Wii NKit images (.nkit.iso / .nkit.gcz) to bit-exact Redump-verified ISOs.",
+  "publisher": {
+    "id": "m5dev",
+    "name": "M5 Dev",
+    "verified": true
+  },
+  "category": "Nintendo",
+  "routes": [
+    { "from": "NKIT.ISO", "to": "ISO", "override": false },
+    { "from": "NKIT.GCZ", "to": "ISO", "override": false }
+  ],
+  "execution": {
+    "kind": "process",
+    "timeoutSeconds": 0,
+    "successExitCodes": [0],
+    "environments": {
+      "windows_x64": {
+        "executable": "bin/windows/x64/nkit2iso.exe",
+        "sha256": "6a79731fc4218579820e925a59eaa7588284856eb0ed15d3fd4510a9e61c927c"
+      },
+      "linux_x64": {
+        "executable": "bin/linux/x64/nkit2iso",
+        "sha256": "04b9fb31075ac6a449271f20e2b0e45b637d275046ee846c6c8b64f4e116c027"
+      },
+      "macos_x64": {
+        "executable": "bin/macos/nkit2iso",
+        "sha256": "e9ec6989dee2c5a9f86611bac17f44c9c9fa38f23b5303319ab674ee0c07fb5e"
+      },
+      "macos_arm64": {
+        "executable": "bin/macos/nkit2iso",
+        "sha256": "e9ec6989dee2c5a9f86611bac17f44c9c9fa38f23b5303319ab674ee0c07fb5e"
+      }
+    },
+    "args": [
+      { "kind": "executable" },
+      { "kind": "literal", "value": "-i" },
+      { "kind": "input" },
+      { "kind": "literal", "value": "-o" },
+      { "kind": "output" }
+    ]
+  }
+}

@@ -1,0 +1,187 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Icon from '../components/Icon.astro';
+import { SITE } from '../lib/site';
+
+export const prerender = false;
+
+// The three-step creator journey. Kept as data so the markup below stays a plain
+// map instead of three near-identical blocks.
+const steps = [
+  {
+    n: '01',
+    icon: 'github',
+    title: 'Create a publisher profile',
+    body: 'Sign in to the storefront with GitHub. Your first visit registers a publisher slug — the handle every listing you ship is credited to.',
+    points: [
+      'One click to sign in — no separate password',
+      'Your slug appears on every plugin and theme page',
+      'Verified publishers get the blue checkmark',
+    ],
+    cta: { label: 'Go to dashboard', href: '/dashboard' },
+  },
+  {
+    n: '02',
+    icon: 'package',
+    title: 'Package your tool or skin',
+    body: 'Bundle your build into a single archive the store can validate and host. Extensions become .orplug, themes become .orskin.',
+    points: [
+      'Extensions: <code>openrom-core --plugin-pack &lt;dir&gt;</code>',
+      'Skins: export .orskin from <code>openrom-core</code> or the in-app Theme Editor',
+      'Include a manifest with per-platform binaries and SHA-256 checksums',
+    ],
+    cta: null,
+  },
+  {
+    n: '03',
+    icon: 'message-circle',
+    title: 'Connect and submit on Discord',
+    body: 'Join the M5 Dev Discord and drop your bundle in #publish-requests. That is the whole hand-off — we take it from there.',
+    points: [
+      'Post in #publish-requests (or any OpenROM discussion channel)',
+      'We validate the manifest and test the binary',
+      'We host it on SourceForge and verify your publisher',
+    ],
+    cta: { label: 'Join M5 Dev Discord', href: SITE.discord },
+  },
+];
+
+const review = [
+  { icon: 'file-code', title: 'Manifest validated', body: 'Every declared platform, executable path, and checksum is checked against the archive.' },
+  { icon: 'shield-check', title: 'Binary tested', body: 'The tool is run against a real image so we know it works before anyone downloads it.' },
+  { icon: 'archive', title: 'Hosted on SourceForge', body: 'The bundle is published with a reproducible SHA-256 and served over a stable URL.' },
+  { icon: 'check-circle', title: 'Publisher verified', body: 'Your profile earns the blue checkmark once the release is live in the catalog.' },
+];
+---
+
+<Layout
+  title="Publish"
+  description="Publish your own OpenROM extension or theme — package it, submit it on Discord, and we host and verify it for you."
+>
+  <div class="aurora relative">
+    <div class="grid-lines pointer-events-none absolute inset-0" aria-hidden="true"></div>
+
+    <section class="relative mx-auto max-w-4xl px-4 pb-12 pt-16 text-center sm:px-6 lg:px-8">
+      <p
+        class="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900/50 px-3 py-1 text-xs text-zinc-400"
+      >
+        <span class="h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
+        Creator guide
+      </p>
+      <h1 class="mt-5 text-balance text-4xl font-bold tracking-tight text-white sm:text-5xl">
+        Publish to the OpenROM Marketplace
+      </h1>
+      <p class="mx-auto mt-4 max-w-2xl text-pretty text-base leading-relaxed text-zinc-400">
+        Ship an extension or a theme to every OpenROM user. Package your build, hand it over on
+        Discord, and we host it on SourceForge, verify it by SHA-256, and credit your publisher
+        profile.
+      </p>
+
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <a
+          href={SITE.discord}
+          rel="noopener"
+          class="inline-flex h-11 items-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-purple-500 px-5 text-sm font-semibold text-zinc-950 transition hover:from-cyan-400 hover:to-purple-400"
+        >
+          <Icon name="message-circle" class="h-4 w-4" />
+          Join M5 Dev Discord
+        </a>
+        <a
+          href="/dashboard"
+          class="inline-flex h-11 items-center gap-2 rounded-lg border border-zinc-800 px-5 text-sm font-medium text-zinc-200 transition hover:border-zinc-700 hover:text-white"
+        >
+          Go to Dashboard
+          <Icon name="chevron-right" class="h-4 w-4" />
+        </a>
+      </div>
+    </section>
+  </div>
+
+  <main class="mx-auto max-w-4xl px-4 pb-20 sm:px-6 lg:px-8">
+    <ol class="space-y-4">
+      {
+        steps.map((step) => (
+          <li class="relative rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6 sm:p-8">
+            <div class="flex flex-col gap-5 sm:flex-row sm:gap-6">
+              <div class="flex shrink-0 items-center gap-3 sm:flex-col sm:items-start">
+                <span class="grid h-12 w-12 place-items-center rounded-xl border border-zinc-800 bg-zinc-950 text-cyan-400">
+                  <Icon name={step.icon} class="h-6 w-6" />
+                </span>
+                <span class="font-mono text-xs text-zinc-600">STEP {step.n}</span>
+              </div>
+              <div class="min-w-0">
+                <h2 class="text-lg font-semibold text-white">{step.title}</h2>
+                <p class="mt-2 text-sm leading-relaxed text-zinc-400">{step.body}</p>
+                <ul class="mt-4 space-y-2">
+                  {step.points.map((point) => (
+                    <li class="flex items-start gap-2 text-sm text-zinc-300">
+                      <Icon name="check" class="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
+                      <span set:html={point} />
+                    </li>
+                  ))}
+                </ul>
+                {step.cta && (
+                  <a
+                    href={step.cta.href}
+                    rel="noopener"
+                    class="mt-5 inline-flex h-10 items-center gap-2 rounded-lg border border-zinc-800 px-4 text-sm font-medium text-zinc-200 transition hover:border-zinc-700 hover:text-white"
+                  >
+                    {step.cta.label}
+                    <Icon name="external-link" class="h-4 w-4" />
+                  </a>
+                )}
+              </div>
+            </div>
+          </li>
+        ))
+      }
+    </ol>
+
+    <section class="mt-12">
+      <h2 class="text-xl font-semibold text-white">What happens after you submit</h2>
+      <p class="mt-2 text-sm leading-relaxed text-zinc-400">
+        A release is never published on trust alone. Each submission goes through the same checks
+        before it reaches the catalog.
+      </p>
+      <div class="mt-6 grid gap-4 sm:grid-cols-2">
+        {
+          review.map((item) => (
+            <div class="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+              <span class="grid h-10 w-10 place-items-center rounded-lg border border-zinc-800 bg-zinc-950 text-cyan-400">
+                <Icon name={item.icon} class="h-5 w-5" />
+              </span>
+              <h3 class="mt-4 text-sm font-semibold text-white">{item.title}</h3>
+              <p class="mt-1 text-sm leading-relaxed text-zinc-400">{item.body}</p>
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    <section
+      class="mt-12 rounded-2xl border border-zinc-800 bg-gradient-to-tr from-cyan-500/10 via-transparent to-purple-500/10 p-8 text-center"
+    >
+      <h2 class="text-xl font-semibold text-white">Ready to ship your first release?</h2>
+      <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-zinc-400">
+        Set up your publisher profile, then say hello in the M5 Dev Discord. We review submissions
+        as they arrive.
+      </p>
+      <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+        <a
+          href={SITE.discord}
+          rel="noopener"
+          class="inline-flex h-11 items-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-purple-500 px-5 text-sm font-semibold text-zinc-950 transition hover:from-cyan-400 hover:to-purple-400"
+        >
+          <Icon name="message-circle" class="h-4 w-4" />
+          Join M5 Dev Discord
+        </a>
+        <a
+          href="/dashboard"
+          class="inline-flex h-11 items-center gap-2 rounded-lg border border-zinc-800 px-5 text-sm font-medium text-zinc-200 transition hover:border-zinc-700 hover:text-white"
+        >
+          Go to Dashboard
+        </a>
+      </div>
+    </section>
+  </main>
+</Layout>

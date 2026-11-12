@@ -1,0 +1,6 @@
+# Staged plugin binaries are build outputs, not source: the upstream GitHub
+# repository (DonMikone/nkit2iso) was deleted, so they were compiled here from
+# the source preserved on the Go module proxy at v0.1.0. The manifest, LICENSE
+# and this file are committed so the bundle contents stay reviewable; the binary
+# payload is not.
+bin/

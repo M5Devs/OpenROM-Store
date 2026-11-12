@@ -85,6 +85,7 @@ export function buildSitemapEntries(
 ): SitemapEntry[] {
   return [
     { loc: `${SITE_ORIGIN}/`, priority: '1.0' },
+    { loc: `${SITE_ORIGIN}/publish`, priority: '0.7' },
     ...plugins.map((row) => ({
       loc: `${SITE_ORIGIN}/plugin/${encodeURIComponent(row.id)}`,
       lastmod: toLastmod(row.created_at),
