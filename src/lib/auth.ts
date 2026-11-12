@@ -12,7 +12,7 @@
  */
 
 import type { AstroCookies } from 'astro';
-import { SESSION_COOKIE, SESSION_TTL_SECONDS, verifySessionToken, type SessionPayload } from './session';
+import { SESSION_COOKIE, SESSION_TTL_SECONDS, verifySessionToken, type SessionPayload } from './session.ts';
 
 /** The subset of the Astro context the session helpers actually need. */
 export interface SessionContext {

@@ -1,13 +1,18 @@
 import type { APIRoute } from 'astro';
-import { getDB } from '../../../../lib/db';
-import { getSessionUser, jsonResponse } from '../../../../lib/auth';
-import { validatePublisherId } from '../../../../lib/publishers';
+import { getDB } from '../../../../lib/db.ts';
+import { getSessionUser, jsonResponse } from '../../../../lib/auth.ts';
+import { validatePublisherId } from '../../../../lib/publishers.ts';
+import {
+  countPublisherPlugins,
+  deletionRequestEmbed,
+  sendDiscordWebhook,
+} from '../../../../lib/discord.ts';
 import {
   authorizePublisher,
   createDeletionRequest,
   getPendingDeletionRequest,
   validateDeletionReason,
-} from '../../../../lib/teams';
+} from '../../../../lib/teams.ts';
 
 export const prerender = false;
 
@@ -18,6 +23,11 @@ export const prerender = false;
  * irreversible (its listings and their download URLs disappear), so an owner
  * records a reason here and an operator reviews it. The dashboard surfaces a
  * pending banner from `getPendingDeletionRequest`.
+ *
+ * A new request also raises an alert in the private operator channel, so a
+ * reviewer does not have to poll the dashboard to notice one. The alert is
+ * best-effort: the request is already recorded by then, and a Discord outage
+ * must not turn a successful request into an error for the owner.
  */
 export const POST: APIRoute = async (context) => {
   const id = context.params.id ?? '';
@@ -69,5 +79,34 @@ export const POST: APIRoute = async (context) => {
     return jsonResponse({ error: 'Could not record the deletion request.' }, 500);
   }
 
+  await alertOperators(db, context.locals.runtime?.env?.DISCORD_ADMIN_WEBHOOK_URL, {
+    publisherId: id,
+    requestedBy: session.githubUsername,
+    reason: (body.reason as string).trim(),
+  });
+
   return jsonResponse({ request }, 201);
 };
+
+/**
+ * Post the deletion alert to the operator channel, if one is configured.
+ *
+ * Never allowed to fail the request: the reason and the listing count are looked
+ * up here and any error is logged and swallowed, because the deletion request is
+ * already durable by the time this runs.
+ */
+async function alertOperators(
+  db: D1Database,
+  webhookUrl: string | undefined,
+  details: { publisherId: string; requestedBy: string; reason: string },
+): Promise<void> {
+  if (!webhookUrl) return;
+  try {
+    const activePlugins = await countPublisherPlugins(db, details.publisherId);
+    await sendDiscordWebhook(webhookUrl, {
+      embeds: [deletionRequestEmbed({ ...details, activePlugins })],
+    });
+  } catch (error) {
+    console.error(`Failed to alert operators about deletion of "${details.publisherId}"`, error);
+  }
+}

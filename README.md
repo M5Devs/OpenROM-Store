@@ -48,6 +48,7 @@ with a direct call to action to the [submission guide](./CONTRIBUTING.md).
 | `src/pages/api/user/profile.ts` | `PATCH` the signed-in user's display name + avatar |
 | `src/pages/api/publishers/create.ts` | Creates a publisher owned by the signed-in user |
 | `src/pages/api/publishers/[id].ts` | `GET` a publisher profile + stats; `PATCH` the owner's branding |
+| `src/pages/api/discord/interactions.ts` | Discord HTTP interactions endpoint: PING/PONG, then the owner-gated `/announce`, `/verify`, `/stats` |
 | `src/components/` | `Navbar`, `Card`, `CategoryFilter`, `Icon`, `ImageField` |
 | `src/lib/db.ts` | Typed D1 access layer for the catalog |
 | `src/lib/session.ts` | HMAC-signed session token (sign/verify) |
@@ -58,6 +59,7 @@ with a direct call to action to the [submission guide](./CONTRIBUTING.md).
 | `src/lib/image.ts` | Image size/format validation + dimension parsing (shared) |
 | `src/lib/image-client.ts` | Browser-side downscale + WebP encoding for uploads |
 | `src/lib/media.ts` | Accepts an uploaded image data URL or an http(s) URL |
+| `src/lib/discord.ts` | Discord signature verification, interaction types, command handlers and embeds |
 | `migrations/0001_init.sql` | D1 schema for the catalog |
 | `migrations/0002_auth_and_publishers.sql` | D1 schema for users + publishers |
 | `migrations/0003_publisher_profiles.sql` | Publisher profile fields + `plugins.publisher_id` |
@@ -65,6 +67,7 @@ with a direct call to action to the [submission guide](./CONTRIBUTING.md).
 | `migrations/0009_tsundere_v2.sql` | Upgrade the `anime-tsundere` theme listing to the `.orskin` v2 spec (2.0.0) |
 | `seed/0001_seed.sql` | Seed with the repository's real, verified extensions |
 | `scripts/package_orskin.py` | Deterministic `.orskin` theme packager (sorted entries, fixed ZIP epoch) |
+| `scripts/register_discord_commands.mjs` | Registers the `/announce`, `/verify` and `/stats` slash commands with Discord |
 | `scripts/test_sourceforge_storage.sh` | SourceForge connectivity + upload probe |
 | `scripts/test-sourceforge.sh` | Alias for the probe above |
 | `tests/auth.test.ts` / `tests/publisher-profile.test.ts` / `tests/publisher-profile-page.test.ts` / `tests/user-profile.test.ts` / `tests/package_orskin.test.ts` | Unit tests (`npm test`) |
@@ -85,6 +88,11 @@ npm run db:reset:local
 #    GITHUB_CLIENT_ID=...
 #    GITHUB_CLIENT_SECRET=...
 #    SESSION_SECRET=...   # falls back to GITHUB_CLIENT_SECRET when unset
+#
+#    Optional, for the Discord admin bot (see "Discord admin bot" below):
+#    DISCORD_PUBLIC_KEY=...        # application public key, 64 hex characters
+#    DISCORD_OWNER_USER_ID=...     # the only Discord user allowed to run commands
+#    DISCORD_ADMIN_WEBHOOK_URL=... # channel webhook for operator alerts
 
 # 3. Start the dev server (emulates the D1 binding via platformProxy).
 npm run dev            # http://localhost:4321
@@ -144,6 +152,54 @@ derived server-side and can never be supplied by the client.
 Register the callback URL on the GitHub OAuth app as
 `https://openrom-store.pages.dev/api/auth/callback` (and, for local development,
 `http://localhost:4321/api/auth/callback`).
+
+## Discord admin bot
+
+The store is administrable from a private Discord channel without a gateway
+connection. Discord POSTs each interaction to
+`/api/discord/interactions`, and the route answers within the three-second budget —
+there is no always-on process to host.
+
+**Setup.** Create a Discord application, then:
+
+1. Set **Interactions Endpoint URL** to
+   `https://openrom-store.pages.dev/api/discord/interactions`. Discord immediately
+   sends a PING; the route answers with a PONG, which is how the URL is verified.
+2. Copy the **Public Key** into `DISCORD_PUBLIC_KEY` (64 hex characters).
+3. Set `DISCORD_OWNER_USER_ID` to the Discord user id allowed to run commands.
+4. Optionally set `DISCORD_ADMIN_WEBHOOK_URL` to a channel webhook for operator
+   alerts (see below).
+5. Register the commands:
+
+   ```bash
+   DISCORD_BOT_TOKEN=... DISCORD_APPLICATION_ID=... \
+     node scripts/register_discord_commands.mjs
+   ```
+
+   Add `DISCORD_GUILD_ID=...` to register into one server, which applies
+   immediately; omit it for global commands, which can take up to an hour to
+   appear everywhere.
+
+**Commands.**
+
+| Command | Effect |
+| --- | --- |
+| `/announce title message [url]` | Broadcasts an in-app notification to every registered user in one `INSERT … SELECT`, then confirms in the channel. |
+| `/verify publisher` | Sets `publishers.verified = 1` and `plugins.publisher_verified = 1` for that publisher's listings, in a single batch. |
+| `/stats` | Live totals for extensions, downloads, publishers and users. |
+
+**Two layers of security.** The Ed25519 signature over `timestamp + body` proves a
+request came from Discord, and the raw body is verified before it is parsed so the
+signed bytes are never re-serialised. That alone is not authorization — anyone in
+any server can invoke a global command — so every command is additionally gated on
+`DISCORD_OWNER_USER_ID`. Denials and validation errors are ephemeral, so they never
+appear in the channel.
+
+**Deletion alerts.** When a publisher owner files a deletion request, the store
+posts a rich embed to `DISCORD_ADMIN_WEBHOOK_URL` with the requester, the reason
+and how many listings are at stake. The alert is best-effort: the request is
+already recorded by the time it is sent, so a Discord outage is logged and
+swallowed rather than failing the request for the owner.
 
 ## Publisher profiles
 
@@ -229,7 +285,10 @@ Create a Pages project for this repository and set:
 - **Compatibility flags:** `nodejs_compat`
 - **D1 binding:** variable `DB` → the `openrom-store` database
 - **Environment variables (encrypted):** `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`,
-  and (recommended) `SESSION_SECRET` for signing session cookies
+  and (recommended) `SESSION_SECRET` for signing session cookies; plus
+  `DISCORD_PUBLIC_KEY`, `DISCORD_OWNER_USER_ID` and `DISCORD_ADMIN_WEBHOOK_URL`
+  if you use the Discord admin bot (all three are optional — without them the
+  interactions endpoint refuses every request and no alerts are posted)
 
 > Upgrading an existing project that was a no-build static site (as this one was)
 > requires setting the build command and switching the project to the V2 build

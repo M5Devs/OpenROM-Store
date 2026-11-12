@@ -15,7 +15,7 @@ import {
   MAX_ENCODED_BYTES,
   base64PayloadBytes,
   type AllowedImageType,
-} from './image';
+} from './image.ts';
 
 /** Reject absurd source files before we spend time decoding them. */
 export const MAX_SOURCE_BYTES = 12_000_000;

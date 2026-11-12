@@ -30,6 +30,11 @@ export interface FakeDb {
 
 export function fakeD1(resolve: DbResolver = () => ({}), calls: DbCall[] = []): FakeDb {
   function statement(sql: string, bindings: unknown[]) {
+    /** Record and resolve without choosing a result shape, for `batch`. */
+    const exec = async () => {
+      calls.push({ sql, bindings });
+      return { meta: { changes: resolve(sql, bindings).changes ?? 0 } };
+    };
     return {
       bind: (...values: unknown[]) => statement(sql, values),
       all: async () => {
@@ -40,13 +45,17 @@ export function fakeD1(resolve: DbResolver = () => ({}), calls: DbCall[] = []): 
         calls.push({ sql, bindings });
         return resolve(sql, bindings).first ?? null;
       },
-      run: async () => {
-        calls.push({ sql, bindings });
-        return { meta: { changes: resolve(sql, bindings).changes ?? 0 } };
-      },
+      run: exec,
+      // `db.batch` receives the statement objects and runs each one; the fake
+      // keeps the same contract so batched writes are observable like any other.
+      _exec: exec,
     };
   }
-  const db = { prepare: (sql: string) => statement(sql, []) } as unknown as D1Database;
+  const db = {
+    prepare: (sql: string) => statement(sql, []),
+    batch: async (statements: { _exec: () => Promise<unknown> }[]) =>
+      Promise.all(statements.map((entry) => entry._exec())),
+  } as unknown as D1Database;
   return {
     db,
     calls,

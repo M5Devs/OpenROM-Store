@@ -10,7 +10,7 @@
  * win. Without that guard a custom avatar would be wiped by the next sign-in.
  */
 
-import type { SessionUser } from './session';
+import type { SessionUser } from './session.ts';
 
 export interface UserRow {
   id: number;
