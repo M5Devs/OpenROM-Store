@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 2,
+  "id": "nkit",
+  "name": "NKit",
+  "version": "3.2.1",
+  "minCoreVersion": "4.0.0",
+  "description": "Nintendo GameCube, Wii, and Wii U disc restoration, WUA, and compression suite.",
+  "publisher": {
+    "id": "m5dev",
+    "name": "M5 Dev",
+    "verified": true
+  },
+  "category": "Nintendo",
+  "routes": [
+    { "from": "ISO", "to": "WUA", "override": false },
+    { "from": "WUD", "to": "Loadiine", "override": false },
+    { "from": "WUX", "to": "WUA", "override": false },
+    { "from": "RVZ", "to": "ISO", "override": false },
+    { "from": "GCZ", "to": "ISO", "override": false }
+  ],
+  "execution": {
+    "kind": "process",
+    "timeoutSeconds": 0,
+    "successExitCodes": [0],
+    "environments": {
+      "windows_x64": {
+        "executable": "bin/windows/x86_64/nkit.exe",
+        "sha256": "c3919923717d527b0246816daf1ce7d52ced86d550161a617abc0d3bceab6d43"
+      },
+      "linux_x64": {
+        "executable": "bin/linux/x86_64/nkit",
+        "sha256": "2768f280042d2742be9fdbaba53f40a84eaf7c9e12a7fe8880243e6814751c76"
+      },
+      "macos_arm64": {
+        "executable": "bin/macos/arm64/nkit",
+        "sha256": "069d715a810bee7cc5ef69fe6e4524435e77fb28e30551f29bc6a007c45142fa"
+      },
+      "macos_x64": {
+        "executable": "bin/macos/x86_64/nkit",
+        "sha256": "bf50ac77c4174efbd9464827ca1e92562bbc72307ab3a0d11e7d62558a962527"
+      }
+    },
+    "args": [
+      { "kind": "executable" },
+      { "kind": "literal", "value": "convert" },
+      { "kind": "literal", "value": "--input" },
+      { "kind": "input" },
+      { "kind": "literal", "value": "--output" },
+      { "kind": "outputDir" }
+    ]
+  }
+}
